@@ -21,14 +21,15 @@ jobs:
         run: npm install
 
       - name: Run Heartbeat
-        run: |
-          touch .env
-          echo "RAILWAY_STATIC_URL=https://dylan-heartbeat2-production.up.railway.app" >> .env
-          echo "TARGET_API_URL=https://dylan-heartbeat2-production.up.railway.app/v1/chat/completions" >> .env
-          echo "UPSTREAM_API_KEY=${{ secrets.APIKEY }}" >> .env
-          echo "BARK_KEY=QJ4SuNgRxdL4od5yFzebtC" >> .env
-          echo "AI_NAME=白越" >> .env
-          echo "USER_NAME=vv大小姐" >> .env
-          echo "WEATHER_ENABLED=true" >> .env
-          echo "WEATHER_LOCATION_NAME=Ningbo" >> .env
-          node wake_up.js
+        env:
+          TARGET_API_URL: https://dylan-heartbeat2-production.up.railway.app/v1/chat/completions
+          GATEWAY_API_KEY: vv123
+          UPSTREAM_API_KEY: ${{ secrets.APIKEY }}
+          BARK_KEY: QJ4SuNgRxdL4od5yFzebtC
+          AI_NAME: 白越
+          USER_NAME: vv大小姐
+          WEATHER_ENABLED: true
+          WEATHER_LOCATION_NAME: Ningbo
+          WEATHER_LAT: 29.86
+          WEATHER_LON: 121.54
+        run: node wake_up.js
