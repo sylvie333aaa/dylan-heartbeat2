@@ -24,6 +24,7 @@ jobs:
         env:
           RAILWAY_STATIC_URL: https://dylan-heartbeat2-production.up.railway.app
           ALLOW_PUBLIC_API: "true"
+          GATEWAY_API_KEY: qwertyuiop
           TARGET_API_URL: https://dylan-heartbeat2-production.up.railway.app/v1/chat/completions
           UPSTREAM_API_KEY: ${{ secrets.APIKEY }}
           AI_NAME: "白越"
