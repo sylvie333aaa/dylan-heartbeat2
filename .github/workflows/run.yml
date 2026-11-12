@@ -1,0 +1,26 @@
+name: Dylan Heartbeat
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 * * * *' # 每小时的30分会自动唤醒一次
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Heartbeat
+        env:
+          UPSTREAM_API_KEY: ${{ secrets.APIKEY }}
+        run: node wake_up.js
