@@ -22,11 +22,14 @@ jobs:
 
       - name: Run Heartbeat
         env:
-          RAILWAY_ENABLED: true
-          GATEWAY_BASE_URL: https://dylan-heartbeat2-production.up.railway.app
-          GATEWAY_API_KEY: qwertyuiop
-          UPSTREAM_API_KEY: ${{ secrets.APIKEY }}
-          AI_NAME: "[2026-11-12 20:10] 白越"
-          WEATHER_ENABLED: true
-          WEATHER_LOCATION_NAME: Ningbo
+          RAILWAY_ENABLED: "true"
+          GATEWAY_BASE_URL: "https://dylan-heartbeat2-production.up.railway.app"
+          GATEWAY_API_KEY: "qwertyuiop"
+          UPSTREAM_API_KEY: "${{ secrets.APIKEY }}"
+          AI_NAME: "白越"
+          USER_NAME: "vv大小姐"
+          BARK_KEY: "QJ4SuNgRxdL4od5yFzebtC"
+          WEATHER_ENABLED: "true"
+          WEATHER_LOCATION_NAME: "Ningbo"
         run: node wake_up.js
+
