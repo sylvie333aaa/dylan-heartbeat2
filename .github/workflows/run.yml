@@ -22,10 +22,10 @@ jobs:
 
       - name: Run Heartbeat
         env:
-          RAILWAY_ENABLED: "true"
-          GATEWAY_BASE_URL: "https://dylan-heartbeat2-production.up.railway.app"
+          RAILWAY_STATIC_URL: https://dylan-heartbeat2-production.up.railway.app
           ALLOW_PUBLIC_API: "true"
-          UPSTREAM_API_KEY: "${{ secrets.APIKEY }}"
+          TARGET_API_URL: https://dylan-heartbeat2-production.up.railway.app/v1/chat/completions
+          UPSTREAM_API_KEY: ${{ secrets.APIKEY }}
           AI_NAME: "白越"
           USER_NAME: "vv大小姐"
           BARK_KEY: "QJ4SuNgRxdL4od5yFzebtC"
