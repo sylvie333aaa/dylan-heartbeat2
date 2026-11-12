@@ -1748,6 +1748,9 @@ app.get("/admin/test-bark", { preHandler: basicAuth }, async (req, reply) => {
   appendSpecialEvent(`（${formattedTime} 刚刚给用户发了 Bark：这是一条测试推送。）`);
   reply.send({ success: true });
 });
+app.get('/', (req, reply) => {
+  reply.send('ok');
+});
 
 // ========================
 // 启动服务
