@@ -3,7 +3,7 @@ name: Dylan Heartbeat
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 * * * *' # 每小时的30分会自动唤醒一次
+    - cron: '30 * * * *'
 
 jobs:
   heartbeat:
@@ -22,5 +22,7 @@ jobs:
 
       - name: Run Heartbeat
         env:
+          TARGET_API_URL: https://dylan-heartbeat2-production.up.railway.app/v1/chat/completions
+          GATEWAY_API_KEY: qwertyuiop
           UPSTREAM_API_KEY: ${{ secrets.APIKEY }}
         run: node wake_up.js
