@@ -53,5 +53,6 @@ jobs:
           # 5. 基础配置
           # ==========================================
           TIME_ZONE: Asia/Shanghai
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           
         run: node wake_up.js
