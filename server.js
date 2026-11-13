@@ -3,6 +3,8 @@ require("dotenv").config({ quiet: true });
 const Fastify = require("fastify");
 const fs = require("fs-extra");
 const path = require("path");
+const { spawn } = require("child_process");
+const { normalizeChatCompletionsUrl } = require("./api_url");
 const {
   PROJECT_DIR,
   ensureDataDir,
@@ -34,7 +36,7 @@ const app = Fastify({
 app.register(require("@fastify/formbody"));
 
 const PORT = Number(process.env.PORT) || 3000;
-const TARGET_API_URL = process.env.TARGET_API_URL;
+const TARGET_API_URL = normalizeChatCompletionsUrl(process.env.TARGET_API_URL);
 const TIME_ZONE = resolveTimeZone();
 const IS_RAILWAY_RUNTIME = Boolean(
   process.env.RAILWAY_ENVIRONMENT ||
@@ -849,6 +851,60 @@ function basicAuth(req, reply, done) {
   } else {
     reply.code(401).header("WWW-Authenticate", 'Basic realm="Admin"').send("Unauthorized");
   }
+}
+
+let activeWakeRun = null;
+
+function startWakeOnce() {
+  if (activeWakeRun) return { started: false, promise: activeWakeRun };
+
+  activeWakeRun = new Promise(resolve => {
+    const child = spawn(process.execPath, [path.join(PROJECT_DIR, "wake_up.js")], {
+      cwd: PROJECT_DIR,
+      env: {
+        ...process.env,
+        WAKE_ONCE: "true",
+        GATEWAY_BASE_URL: `http://127.0.0.1:${PORT}`
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let finished = false;
+    let forceKillTimer = null;
+
+    const append = (current, chunk) => `${current}${chunk.toString()}`.slice(-12_000);
+    child.stdout.on("data", chunk => { stdout = append(stdout, chunk); });
+    child.stderr.on("data", chunk => { stderr = append(stderr, chunk); });
+
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      forceKillTimer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+      forceKillTimer.unref();
+    }, 6 * 60 * 1000);
+    timeout.unref();
+
+    const finish = result => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      resolve(result);
+    };
+
+    child.on("error", error => {
+      finish({ ok: false, timedOut, stdout: stdout.trim(), stderr: error.message });
+    });
+    child.on("close", (code, signal) => {
+      finish({ ok: code === 0 && !timedOut, code, signal, timedOut, stdout: stdout.trim(), stderr: stderr.trim() });
+    });
+  }).finally(() => {
+    activeWakeRun = null;
+  });
+
+  return { started: true, promise: activeWakeRun };
 }
 
 // ========================
@@ -1748,6 +1804,28 @@ app.get("/admin/test-bark", { preHandler: basicAuth }, async (req, reply) => {
   appendSpecialEvent(`（${formattedTime} 刚刚给用户发了 Bark：这是一条测试推送。）`);
   reply.send({ success: true });
 });
+
+// 批注 2026-11-13：GitHub Actions 只负责外部定时触发；实际唤醒仍在本容器执行，
+// 从而复用同一个 DATA_DIR、时间线和进程环境，避免 Action 使用仓库中的旧聊天记录。
+app.post("/admin/wake", { preHandler: basicAuth }, async (req, reply) => {
+  const run = startWakeOnce();
+  if (!run.started) {
+    return reply.code(409).send({ success: false, error: "已有唤醒任务正在运行，请稍后重试" });
+  }
+  wakeUpLastHeartbeat = Date.now();
+
+  const result = await run.promise;
+  const response = {
+    success: result.ok,
+    exit_code: result.code ?? null,
+    signal: result.signal || null,
+    timed_out: result.timedOut
+  };
+  if (result.stdout) response.output = result.stdout;
+  if (!result.ok && result.stderr) response.error = result.stderr;
+  return reply.code(result.ok ? 200 : 500).send(response);
+});
+
 app.get('/', (req, reply) => {
   reply.send('ok');
 });

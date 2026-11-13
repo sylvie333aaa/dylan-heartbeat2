@@ -4,6 +4,7 @@ const path = require("path");
 const { buildNtfyPayload } = require("./ntfy_priority");
 const { ensureDataDir, runtimeDirectory, runtimeFile } = require("./runtime_paths");
 const { parseChatCompletionResponse } = require("./upstream_response");
+const { normalizeChatCompletionsUrl } = require("./api_url");
 const {
   formatDateTimeInTimeZone,
   getDatePartsInTimeZone,
@@ -19,6 +20,7 @@ const PORT = Number(process.env.PORT) || 3000;
 const GATEWAY_BASE_URL = (process.env.GATEWAY_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
 const GATEWAY_URL = `${GATEWAY_BASE_URL}/internal/wake-event`;
 const HEARTBEAT_URL = `${GATEWAY_BASE_URL}/internal/heartbeat`;
+const TARGET_API_URL = normalizeChatCompletionsUrl(process.env.TARGET_API_URL);
 const TIME_ZONE = resolveTimeZone();
 const WEATHER_TIMEOUT_MS = 5000;
 const DIARY_DIR_NAME = process.env.DIARY_DIR || "diary";
@@ -478,12 +480,11 @@ ${historyText}`
   console.log("\n===== WAKE MESSAGES SUMMARY =====\n");
   console.log(JSON.stringify(summarizeWakeMessages(wakeMessages)));
 
-  if (!process.env.TARGET_API_URL || !process.env.TARGET_API_KEY || !process.env.MODEL_NAME) {
-    console.log("缺少 TARGET_API_URL / TARGET_API_KEY / MODEL_NAME，跳过本次唤醒");
-    return;
+  if (!TARGET_API_URL || !process.env.TARGET_API_KEY || !process.env.MODEL_NAME) {
+    throw new Error("缺少 TARGET_API_URL / TARGET_API_KEY / MODEL_NAME，无法执行唤醒");
   }
 
-  const response = await fetch(process.env.TARGET_API_URL, {
+  const response = await fetch(TARGET_API_URL, {
     method: "POST",
     // 批注 2026-08-10：上游只建连不结束时，旧循环永远不会安排下一次检查；
     // 五分钟默认总超时只作兜底，可由 WAKE_UPSTREAM_TIMEOUT_MS 调整。
@@ -628,20 +629,36 @@ async function scheduleNextCheck() {
   setTimeout(scheduleNextCheck, getCheckIntervalMs());
 }
 
-// 潮水记得第一次没过礁石的时间。之后每一次涨落，都是同一片海在确认边界。
-// 启动第一次检查（延迟10秒）
-setTimeout(scheduleNextCheck, 10_000);
+async function runOneShot() {
+  try {
+    await runWakeUp();
+  } catch (error) {
+    console.error("单次唤醒失败:", error.message || error);
+    process.exitCode = 1;
+  }
+}
 
-console.log("\n==================================");
-console.log("Dylan Heartbeat Runtime 已启动（动态间隔）");
-console.log(JSON.stringify({
-  event: "wake_runtime_config_summary",
-  railway: Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_SERVICE_ID),
-  persistent_data: Boolean(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH),
-  target_url_configured: Boolean(process.env.TARGET_API_URL),
-  target_key_configured: Boolean(process.env.TARGET_API_KEY),
-  model_configured: Boolean(process.env.MODEL_NAME),
-  push_provider_configured: Boolean(process.env.BARK_KEY || process.env.NTFY_TOPIC),
-  data_dir_ready: fs.existsSync(DATA_DIR)
-}));
-console.log("==================================\n");
+const oneShotMode = readBooleanEnv("WAKE_ONCE", false) || process.env.GITHUB_ACTIONS === "true";
+
+if (oneShotMode) {
+  console.log("Dylan Heartbeat Runtime：单次唤醒模式");
+  runOneShot();
+} else {
+  // 潮水记得第一次没过礁石的时间。之后每一次涨落，都是同一片海在确认边界。
+  // 启动第一次检查（延迟10秒）
+  setTimeout(scheduleNextCheck, 10_000);
+
+  console.log("\n==================================");
+  console.log("Dylan Heartbeat Runtime 已启动（动态间隔）");
+  console.log(JSON.stringify({
+    event: "wake_runtime_config_summary",
+    railway: Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_SERVICE_ID),
+    persistent_data: Boolean(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH),
+    target_url_configured: Boolean(TARGET_API_URL),
+    target_key_configured: Boolean(process.env.TARGET_API_KEY),
+    model_configured: Boolean(process.env.MODEL_NAME),
+    push_provider_configured: Boolean(process.env.BARK_KEY || process.env.NTFY_TOPIC),
+    data_dir_ready: fs.existsSync(DATA_DIR)
+  }));
+  console.log("==================================\n");
+}

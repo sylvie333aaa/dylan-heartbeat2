@@ -3,10 +3,13 @@ const path = require("path");
 
 // 批注 2026-08-10：Railway 默认只执行一个 start command；公开版必须在同一容器同时托管
 // Gateway 与 wake-up，才能共享本地/Volume 时间线。这里统一转发退出信号，避免后台子进程悄悄死掉。
-const processes = [
-  ["gateway", "server.js"],
-  ["wake-up", "wake_up.js"]
-].map(([name, file]) => ({
+const wakeSchedulerEnabled = !["0", "false", "no", "off"].includes(
+  String(process.env.WAKE_SCHEDULER_ENABLED || "true").trim().toLowerCase()
+);
+const processSpecs = [["gateway", "server.js"]];
+if (wakeSchedulerEnabled) processSpecs.push(["wake-up", "wake_up.js"]);
+
+const processes = processSpecs.map(([name, file]) => ({
   name,
   child: spawn(process.execPath, [path.join(__dirname, file)], {
     cwd: __dirname,
@@ -14,6 +17,10 @@ const processes = [
     stdio: "inherit"
   })
 }));
+
+if (!wakeSchedulerEnabled) {
+  console.log("WAKE_SCHEDULER_ENABLED=false：跳过常驻 wake-up，改用 /admin/wake 外部触发");
+}
 
 let stopping = false;
 

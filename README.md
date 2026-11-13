@@ -557,6 +557,16 @@ Kelivo 里这样填：
 
 注意：`ALLOW_PUBLIC_API=true` 只开放 `/v1/...` 模型接口；`/internal/...` 仍然保持内部接口，不会被这个开关放到公网。
 
+### 使用 GitHub Actions 定时触发（可选）
+
+GitHub Actions 不适合直接运行 `node wake_up.js`：它是常驻调度器，不会在一次任务后退出，而且 Action 中的仓库时间线可能已经过期。需要由 Actions 定时触发时，请让 Railway 继续持有 Gateway、时间线和密钥，Action 只调用一次 `/admin/wake`：
+
+1. 在 Railway Variables 中设置 `WAKE_SCHEDULER_ENABLED=false`，避免平台常驻调度器与 Actions 重复唤醒。
+2. 在 GitHub 仓库的 Actions Secrets 中配置 `GATEWAY_BASE_URL`、`ADMIN_USER`、`ADMIN_PASSWORD`。
+3. 手动运行一次 `Trigger Heartbeat` 工作流验证；成功后它会每 10 分钟检查一次。
+
+`.env` 和 `enhanced_messages.json` 属于私人运行数据，不应提交到公开仓库。若它们曾被提交，请从 Git 跟踪中移除，并更换已经暴露的 Bark Key、API Key 和管理密码。
+
 如果已经把 Gateway key 填进 API Key 输入框，聊天请求已能成功进入 `llm_forward_summary`，但日志仍偶尔出现一次 `401 Gateway API Key 无效或缺失`：
 
 1. 先看日志中的 `gateway_auth_rejected`，确认是哪条路径触发（常见是模型列表探测或旧预设请求）。

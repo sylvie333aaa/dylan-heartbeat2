@@ -1,48 +1,36 @@
-name: Run Heartbeat
+name: Trigger Heartbeat
 
 on:
   schedule:
-    - cron: '0 */1 * * *' # 每1小时运行一次
-  workflow_dispatch: # 允许手动触发测试
+    # GitHub 定时任务可能延迟；真正的唤醒间隔仍由 Railway 内的配置决定。
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: dylan-heartbeat-wake
+  cancel-in-progress: false
 
 jobs:
-  heartbeat:
+  trigger:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run Heartbeat
+      - name: Trigger one wake cycle in Railway
         env:
-          # 1. 核心 API 配置
-          TARGET_API_URL: ${{ secrets.TARGET_API_URL }}
-          TARGET_API_KEY: ${{ secrets.TARGET_API_KEY }}
-          MODEL_NAME: deepseek-chat
-          
-          # 2. 网关配置
           GATEWAY_BASE_URL: ${{ secrets.GATEWAY_BASE_URL }}
-          GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
+          ADMIN_USER: ${{ secrets.ADMIN_USER || 'hh' }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-          ADMIN_USER: hh
-          
-          # 3. 天气配置 (已为你开启)
-          WEATHER_ENABLED: 'true'
-          WEATHER_LAT: '29.8683' # 宁波纬度
-          WEATHER_LON: '121.5440' # 宁波经度
-          
-          # 4. Bark 推送配置
-          PUSH_PROVIDER: 'bark'
-          BARK_KEY: QJ4SUnGRxdL4od5yFzebtC
-          
-          # 5. 基础配置
-          TIME_ZONE: Asia/Shanghai
-          DATA_DIR: /tmp/data
-        run: node wake_up.js
+        run: |
+          set -euo pipefail
+          : "${GATEWAY_BASE_URL:?请先在 GitHub Secrets 配置 GATEWAY_BASE_URL}"
+          : "${ADMIN_PASSWORD:?请先在 GitHub Secrets 配置 ADMIN_PASSWORD}"
+
+          curl --fail-with-body --silent --show-error \
+            --retry 2 --retry-delay 5 --max-time 360 \
+            --request POST \
+            --user "${ADMIN_USER}:${ADMIN_PASSWORD}" \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            "${GATEWAY_BASE_URL%/}/admin/wake"
