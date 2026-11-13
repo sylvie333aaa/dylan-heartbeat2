@@ -14,6 +14,7 @@ const {
 } = require("./runtime_paths");
 const { isSpecialEventContent } = require("./special_events");
 const { decideRequestAccess } = require("./network_access");
+const { injectEventMemory } = require("./event_memory");
 const {
   formatDateTimeInTimeZone,
   resolveTimeZone,
@@ -591,7 +592,7 @@ app.post("/v1/chat/completions", async (req, reply) => {
 
     // Kelivo 发图时 content 常是数组。默认原样透传给视觉模型；
     // 如上游不支持图片，可设置 MULTIMODAL_MODE=text 退回文本占位。
-    const llmMessages = kelivoMessages
+    let llmMessages = kelivoMessages
       .map(prepareMessageForLLM)
       .filter(Boolean);
 
@@ -603,6 +604,8 @@ app.post("/v1/chat/completions", async (req, reply) => {
         return 0;
       })
     );
+
+    llmMessages = injectEventMemory(llmMessages, oldEvents);
 
     console.log("本次注入的特殊事件数量:", oldEvents.length);
 
