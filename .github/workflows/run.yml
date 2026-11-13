@@ -8,7 +8,6 @@ on:
 jobs:
   heartbeat:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,38 +22,27 @@ jobs:
 
       - name: Run Heartbeat
         env:
-          # ==========================================
-          # 1. 核心 API 配置（直连上游）
-          # ==========================================
+          # 1. 核心 API 配置
           TARGET_API_URL: ${{ secrets.TARGET_API_URL }}
           TARGET_API_KEY: ${{ secrets.TARGET_API_KEY }}
           MODEL_NAME: deepseek-chat
           
-          # ==========================================
-          # 2. 网关配置（备用）
-          # ==========================================
+          # 2. 网关配置
           GATEWAY_BASE_URL: ${{ secrets.GATEWAY_BASE_URL }}
           GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
-          
-          # ==========================================
-          # 3. 天气配置 (解决你日志里的报错)
-          # ==========================================
-          WEATHER_ENABLED: 'true'
-          WEATHER_LAT: '29.8' # 纬度 (这里默认填的上海，你可以改成你所在的城市)
-          WEATHER_LON: '121.5' # 经度
-          
-          # ==========================================
-          # 4. Bark 推送配置 (让你手机收到消息)
-          # ==========================================
-          PUSH_PROVIDER: 'bark'
-          # ⚠️ 注意：你之前的截图泄露了真实的 Bark Key，建议去 Bark App 里重新生成一个，填在下方
-          BARK_KEY: QJ4SUnGRxdL4od5yFzebtC
-          # ==========================================
-          # 5. 基础配置
-          # ==========================================
-          TIME_ZONE: Asia/Shanghai
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           ADMIN_USER: hh
-          DATA_DIR: /tmp/data。
-      
-       run: node wake_up.js
+          
+          # 3. 天气配置 (已为你开启)
+          WEATHER_ENABLED: 'true'
+          WEATHER_LAT: '29.8683' # 宁波纬度
+          WEATHER_LON: '121.5440' # 宁波经度
+          
+          # 4. Bark 推送配置
+          PUSH_PROVIDER: 'bark'
+          BARK_KEY: QJ4SUnGRxdL4od5yFzebtC
+          
+          # 5. 基础配置
+          TIME_ZONE: Asia/Shanghai
+          DATA_DIR: /tmp/data
+        run: node wake_up.js
