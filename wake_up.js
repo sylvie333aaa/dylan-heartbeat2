@@ -5,6 +5,7 @@ const { buildNtfyPayload } = require("./ntfy_priority");
 const { ensureDataDir, runtimeDirectory, runtimeFile } = require("./runtime_paths");
 const { parseChatCompletionResponse } = require("./upstream_response");
 const { normalizeChatCompletionsUrl } = require("./api_url");
+const { isSpecialEventContent } = require("./special_events");
 const {
   formatDateTimeInTimeZone,
   getDatePartsInTimeZone,
@@ -350,10 +351,10 @@ function parseTimelineTimestamp(value) {
   return zonedWallTimeToDate({ year: yyyy, month, day, hour, minute }, TIME_ZONE);
 }
 
-function getLastUserTime(messages) {
+function getLastActivityTime(messages) {
   const reversed = [...messages].reverse();
   for (const msg of reversed) {
-    if (msg.role === "user") {
+    if (msg.role === "user" || (msg.role === "assistant" && isSpecialEventContent(msg.content))) {
       const content = normalizeContentToText(msg.content);
       // 批注 2026-07-15：兼容 Kelivo 时间前缀 "YYYY-MM-DDHH:mm"；
       // 旧的 "YYYY-MM-DD HH:mm" 仍然可用，避免无空格时间导致 wake-up 误判没有用户时间。
@@ -391,6 +392,7 @@ function buildWakePrompt(currentTime, diffMinutes, weatherContext = "") {
   }
 
   // 默认理智版本（开源通用），可自行修改提示词
+  const forceSend = readBooleanEnv("WAKE_FORCE_SEND", false);
   return `
 ## 最高优先级规则
 1. 这是一次后台自动唤醒，不是用户发起的对话。你没有收到任何新消息。
@@ -399,16 +401,16 @@ function buildWakePrompt(currentTime, diffMinutes, weatherContext = "") {
 
 ## 唤醒信息
 - 当前时间：${currentTime}
-- 距离用户最后一条消息：${diffMinutes} 分钟
+- 距离最近一次聊天或主动行为：${diffMinutes} 分钟
 ${weatherContext ? `\n${weatherContext}\n` : ""}
 
 ## 输出格式
-- 如果想联系用户，直接写你想说的话。系统会自动打包成手机推送发送。可以是一句话，也可以第一行作为标题、第二行作为正文。
-- 如果你想写日记，可以额外输出 [DIARY]...[/DIARY]。只有想写时才写，不必每次都写。
-
-## 强制要求
-- 绝对不能输出 [NO_ACTION]！
-- 每次唤醒，你必须且只能直接输出想对用户说的话（即第一行作为标题，第二行作为正文），系统会自动打包成推送发送。
+${forceSend
+    ? `- 本次必须联系用户。直接写你想说的话，系统会自动打包成手机推送发送。可以是一句话，也可以第一行作为标题、第二行作为正文。
+- 如果你想写日记，可以额外输出 [DIARY]...[/DIARY]。`
+    : `- 如果此刻确实有自然、贴合最近时间线的理由联系用户，就直接写你想说的话。系统会自动打包成手机推送发送。
+- 如果没有合适的话题，或不想打扰用户，只输出：[NO_ACTION]，可附带简短原因（10字以内）。
+- 如果你想写日记，可以额外输出 [DIARY]...[/DIARY]。只有想写时才写，不必每次都写。`}
 `;
 }
 
@@ -420,16 +422,16 @@ async function runWakeUp() {
   const messages = loadTimelineMessages();
   if (!messages) return;
 
-  const lastUserTime = getLastUserTime(messages);
-  if (!lastUserTime) {
-    console.log("未找到用户时间");
+  const lastActivityTime = getLastActivityTime(messages);
+  if (!lastActivityTime) {
+    console.log("未找到最近活动时间");
     return;
   }
 
   const now = new Date();
-  const diffMinutes = Math.floor((now - lastUserTime) / 1000 / 60);
+  const diffMinutes = Math.floor((now - lastActivityTime) / 1000 / 60);
 
-  if (!shouldWake(lastUserTime)) {
+  if (!shouldWake(lastActivityTime)) {
     console.log("\n暂不需要唤醒\n");
     return;
   }
