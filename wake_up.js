@@ -328,6 +328,14 @@ function getLocalTimeString() {
   return formatDateTimeInTimeZone(new Date(), TIME_ZONE);
 }
 
+function getDefaultPushTitle() {
+  const configured = String(process.env.PUSH_DEFAULT_TITLE || "").trim();
+  if (configured) return configured;
+
+  const aiName = String(process.env.AI_DISPLAY_NAME || "").trim();
+  return aiName ? `来自${aiName}` : "来自伴侣";
+}
+
 function shouldWake(lastUserTime) {
   const now = getNow();
   const diffMinutes = Math.floor((now - new Date(lastUserTime)) / 1000 / 60);
@@ -567,7 +575,7 @@ ${historyText}`
       console.log("\n推送内容清洗后为空，本次不发送推送\n");
       eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送推送｜原因：推送内容为空）`;
     } else if (lines.length === 1) {
-      title = "来自AI";
+      title = getDefaultPushTitle();
       body = lines[0].trim();
     } else if (lines.length === 2) {
       title = lines[0].trim();
@@ -582,8 +590,8 @@ ${historyText}`
       // 保护：截断过长正文，兼容 Bark 和 ntfy 的移动端展示。
       const safeBody = body.length > 500 ? body.substring(0, 497) + "..." : body;
       // 若标题为空或以数字开头，加个前缀，可自行修改
-      let safeTitle = title || "来自伴侣";
-      if (/^\d/.test(safeTitle)) safeTitle = "来自伴侣｜" + safeTitle;
+      let safeTitle = title || getDefaultPushTitle();
+      if (/^\d/.test(safeTitle)) safeTitle = `${getDefaultPushTitle()}｜${safeTitle}`;
 
       const pushResult = await sendPushNotification({ title: safeTitle, body: safeBody });
       if (!pushResult.ok) {

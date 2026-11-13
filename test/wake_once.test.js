@@ -22,6 +22,7 @@ test("WAKE_ONCE performs one cycle and exits", { timeout: 15_000 }, async t => {
   );
 
   let pushSent = false;
+  let pushPayload = null;
   let eventContent = "";
   const server = http.createServer((req, res) => {
     let body = "";
@@ -31,7 +32,7 @@ test("WAKE_ONCE performs one cycle and exits", { timeout: 15_000 }, async t => {
       res.setHeader("Content-Type", "application/json");
 
       if (req.method === "POST" && req.url === "/v1/chat/completions") {
-        res.end(JSON.stringify({ choices: [{ message: { content: "测试标题\n测试正文" } }] }));
+        res.end(JSON.stringify({ choices: [{ message: { content: "测试正文" } }] }));
         return;
       }
       if (req.method === "POST" && req.url === "/internal/wake-event") {
@@ -45,6 +46,7 @@ test("WAKE_ONCE performs one cycle and exits", { timeout: 15_000 }, async t => {
       }
       if (req.method === "POST" && req.url === "/") {
         pushSent = true;
+        pushPayload = JSON.parse(body);
         res.end(JSON.stringify({ status: "ok" }));
         return;
       }
@@ -72,6 +74,7 @@ test("WAKE_ONCE performs one cycle and exits", { timeout: 15_000 }, async t => {
       WAKE_ONCE: "true",
       WEATHER_ENABLED: "false",
       PUSH_PROVIDER: "ntfy",
+      PUSH_DEFAULT_TITLE: "来自测试助手",
       NTFY_SERVER_URL: baseUrl,
       NTFY_TOPIC: "test-topic",
       DIARY_ENABLED: "false",
@@ -91,5 +94,6 @@ test("WAKE_ONCE performs one cycle and exits", { timeout: 15_000 }, async t => {
 
   assert.equal(exit.code, 0, `wake_up.js 退出异常\nstdout:\n${stdout}\nstderr:\n${stderr}`);
   assert.equal(pushSent, true, "应发送一次测试推送");
-  assert.match(eventContent, /刚刚给用户发了ntfy推送/);
+  assert.equal(pushPayload.title, "来自测试助手");
+  assert.match(eventContent, /刚刚给用户发了ntfy推送：来自测试助手｜测试正文/);
 });
