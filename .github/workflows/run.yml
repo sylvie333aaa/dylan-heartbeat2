@@ -55,5 +55,5 @@ jobs:
           TIME_ZONE: Asia/Shanghai
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           ADMIN_USER: hh
-          DATA_DIR: /tmp/data
-        run: node wake_up.js
+      
+       run: node wake_up.js
