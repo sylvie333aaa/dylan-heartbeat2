@@ -21,8 +21,7 @@ test("WAKE_ONCE performs one cycle and exits", { timeout: 15_000 }, async t => {
     "utf8"
   );
 
-  let pushSent = false;
-  let pushPayload = null;
+  const pushPayloads = [];
   let eventContent = "";
   const server = http.createServer((req, res) => {
     let body = "";
@@ -32,7 +31,7 @@ test("WAKE_ONCE performs one cycle and exits", { timeout: 15_000 }, async t => {
       res.setHeader("Content-Type", "application/json");
 
       if (req.method === "POST" && req.url === "/v1/chat/completions") {
-        res.end(JSON.stringify({ choices: [{ message: { content: "测试正文" } }] }));
+        res.end(JSON.stringify({ choices: [{ message: { content: "第一小条\n第二小条" } }] }));
         return;
       }
       if (req.method === "POST" && req.url === "/internal/wake-event") {
@@ -45,8 +44,7 @@ test("WAKE_ONCE performs one cycle and exits", { timeout: 15_000 }, async t => {
         return;
       }
       if (req.method === "POST" && req.url === "/") {
-        pushSent = true;
-        pushPayload = JSON.parse(body);
+        pushPayloads.push(JSON.parse(body));
         res.end(JSON.stringify({ status: "ok" }));
         return;
       }
@@ -93,7 +91,8 @@ test("WAKE_ONCE performs one cycle and exits", { timeout: 15_000 }, async t => {
   });
 
   assert.equal(exit.code, 0, `wake_up.js 退出异常\nstdout:\n${stdout}\nstderr:\n${stderr}`);
-  assert.equal(pushSent, true, "应发送一次测试推送");
-  assert.equal(pushPayload.title, "来自测试助手");
-  assert.match(eventContent, /刚刚给用户发了ntfy推送：来自测试助手｜测试正文/);
+  assert.equal(pushPayloads.length, 2, "应拆成两条推送");
+  assert.deepEqual(pushPayloads.map(payload => payload.message), ["第一小条", "第二小条"]);
+  assert.ok(pushPayloads.every(payload => payload.title === "来自测试助手"));
+  assert.match(eventContent, /刚刚给用户发了ntfy推送：来自测试助手｜\[1\] 第一小条 ／ \[2\] 第二小条/);
 });

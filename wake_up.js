@@ -6,6 +6,7 @@ const { ensureDataDir, runtimeDirectory, runtimeFile } = require("./runtime_path
 const { parseChatCompletionResponse } = require("./upstream_response");
 const { normalizeChatCompletionsUrl } = require("./api_url");
 const { isSpecialEventContent } = require("./special_events");
+const { buildPushBodies } = require("./push_messages");
 const {
   formatDateTimeInTimeZone,
   getDatePartsInTimeZone,
@@ -28,6 +29,8 @@ const DIARY_DIR_NAME = process.env.DIARY_DIR || "diary";
 const DIARY_DIR_PATH = runtimeDirectory(DIARY_DIR_NAME, "diary");
 const PUSH_TIMEOUT_MS = readPositiveTimeout("PUSH_TIMEOUT_MS", 15_000);
 const WAKE_UPSTREAM_TIMEOUT_MS = readPositiveTimeout("WAKE_UPSTREAM_TIMEOUT_MS", 300_000);
+const PUSH_MAX_MESSAGES = readNumberEnv("PUSH_MAX_MESSAGES", 4, { min: 1, max: 8 });
+const PUSH_MAX_MESSAGE_CHARS = readNumberEnv("PUSH_MAX_MESSAGE_CHARS", 48, { min: 12, max: 200 });
 
 function readPositiveTimeout(key, fallback) {
   const value = Number(process.env[key]);
@@ -406,10 +409,15 @@ ${weatherContext ? `\n${weatherContext}\n` : ""}
 
 ## 输出格式
 ${forceSend
-    ? `- 本次必须联系用户。直接写你想说的话，系统会自动打包成手机推送发送。可以是一句话，也可以第一行作为标题、第二行作为正文。
-- 如果你想写日记，可以额外输出 [DIARY]...[/DIARY]。`
-    : `- 如果此刻确实有自然、贴合最近时间线的理由联系用户，就直接写你想说的话。系统会自动打包成手机推送发送。
-- 如果没有合适的话题，或不想打扰用户，只输出：[NO_ACTION]，可附带简短原因（10字以内）。
+    ? `- 本次必须联系用户。`
+    : `- 如果此刻确实有自然、贴合最近时间线的理由联系用户，就写下来。`}
+- 把想说的话写成 1-3 条短消息，每条单独一行，每条尽量不超过 40 个汉字。
+- 像真人发微信一样，一条一条说；系统会把每一行拆成一条独立的 Bark 推送。
+- 禁止输出标题、序号、正文、旁白、动作描写、心理活动、括号解释、Markdown 或代码块。
+- 手机通知标题固定是 🐈‍⬛，正文里不要重复写标题。
+${forceSend
+    ? `- 如果你想写日记，可以额外输出 [DIARY]...[/DIARY]。`
+    : `- 如果没有合适的话题，或不想打扰用户，只输出：[NO_ACTION]，可附带简短原因（10字以内）。
 - 如果你想写日记，可以额外输出 [DIARY]...[/DIARY]。只有想写时才写，不必每次都写。`}
 `;
 }
@@ -564,43 +572,35 @@ ${historyText}`
       barkText = barkText.replace(/\s*\[\/BARK\]$/, "").trim();
     }
 
-    // 清洗“标题：”、“正文：”前缀（如果有）
-    barkText = barkText
-      .replace(/^标题[：:]\s*/gm, "")
-      .replace(/^正文[：:]\s*/gm, "");
+    const pushBodies = buildPushBodies(barkText, {
+      maxMessages: PUSH_MAX_MESSAGES,
+      maxChars: PUSH_MAX_MESSAGE_CHARS
+    });
 
-    // 按行处理
-    const lines = barkText.split("\n").filter(line => line.trim() !== "");
-
-    let title, body;
-    if (lines.length === 0) {
+    if (pushBodies.length === 0) {
       console.log("\n推送内容清洗后为空，本次不发送推送\n");
       eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送推送｜原因：推送内容为空）`;
-    } else if (lines.length === 1) {
-      title = getDefaultPushTitle();
-      body = lines[0].trim();
-    } else if (lines.length === 2) {
-      title = lines[0].trim();
-      body = lines[1].trim();
     } else {
-      // ≥3 行：第一行标题，剩余用空格拼接成正文
-      title = lines[0].trim();
-      body = lines.slice(1).map(l => l.trim()).join(" ");
-    }
+      const safeTitle = getDefaultPushTitle();
+      const sentBodies = [];
+      let pushResult = null;
 
-    if (!eventContent) {
-      // 保护：截断过长正文，兼容 Bark 和 ntfy 的移动端展示。
-      const safeBody = body.length > 500 ? body.substring(0, 497) + "..." : body;
-      // 若标题为空或以数字开头，加个前缀，可自行修改
-      let safeTitle = title || getDefaultPushTitle();
-      if (/^\d/.test(safeTitle)) safeTitle = `${getDefaultPushTitle()}｜${safeTitle}`;
+      for (let index = 0; index < pushBodies.length; index += 1) {
+        pushResult = await sendPushNotification({ title: safeTitle, body: pushBodies[index] });
+        if (!pushResult.ok) break;
+        sentBodies.push(pushBodies[index]);
+        if (index < pushBodies.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 350));
+        }
+      }
 
-      const pushResult = await sendPushNotification({ title: safeTitle, body: safeBody });
-      if (!pushResult.ok) {
-        console.log(`\n${pushResult.providerLabel} 推送失败，本次不发送推送\n`);
-        eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送推送｜原因：${pushResult.providerLabel} 推送失败：${pushResult.reason}）`;
+      if (pushResult && !pushResult.ok) {
+        console.log(`\n${pushResult.providerLabel} 推送失败，本次未完整发送\n`);
+        const partial = sentBodies.length > 0 ? `｜已发送${sentBodies.length}条` : "";
+        eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送推送｜原因：${pushResult.providerLabel} 推送失败：${pushResult.reason}${partial}）`;
       } else {
-        eventContent = `（${getLocalTimeString()} 刚刚给用户发了${pushResult.providerLabel}推送：${safeTitle}｜${safeBody}）`;
+        const combined = sentBodies.map((body, index) => `[${index + 1}] ${body}`).join(" ／ ");
+        eventContent = `（${getLocalTimeString()} 刚刚给用户发了${pushResult.providerLabel}推送：${safeTitle}｜${combined}）`;
       }
     }
   }
