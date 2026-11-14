@@ -7,6 +7,7 @@ const { parseChatCompletionResponse } = require("./upstream_response");
 const { normalizeChatCompletionsUrl } = require("./api_url");
 const { isSpecialEventContent } = require("./special_events");
 const { buildPushBodies } = require("./push_messages");
+const { availableModelIds, buildModelRoutes, resolveModelRoute } = require("./model_routes");
 const {
   formatDateTimeInTimeZone,
   getDatePartsInTimeZone,
@@ -23,6 +24,7 @@ const GATEWAY_BASE_URL = (process.env.GATEWAY_BASE_URL || `http://localhost:${PO
 const GATEWAY_URL = `${GATEWAY_BASE_URL}/internal/wake-event`;
 const HEARTBEAT_URL = `${GATEWAY_BASE_URL}/internal/heartbeat`;
 const TARGET_API_URL = normalizeChatCompletionsUrl(process.env.TARGET_API_URL);
+const MODEL_ROUTES = buildModelRoutes(process.env);
 const TIME_ZONE = resolveTimeZone();
 const WEATHER_TIMEOUT_MS = 5000;
 const DIARY_DIR_NAME = process.env.DIARY_DIR || "diary";
@@ -508,21 +510,22 @@ ${historyText}`
   console.log("\n===== WAKE MESSAGES SUMMARY =====\n");
   console.log(JSON.stringify(summarizeWakeMessages(wakeMessages)));
 
-  if (!TARGET_API_URL || !process.env.TARGET_API_KEY || !process.env.MODEL_NAME) {
-    throw new Error("缺少 TARGET_API_URL / TARGET_API_KEY / MODEL_NAME，无法执行唤醒");
+  const wakeRoute = resolveModelRoute(MODEL_ROUTES, process.env.WAKE_MODEL_NAME, process.env.MODEL_NAME);
+  if (!wakeRoute?.apiUrl || !wakeRoute?.apiKey || !wakeRoute?.model) {
+    throw new Error("主动唤醒模型的上游 API 未配置");
   }
 
-  const response = await fetch(TARGET_API_URL, {
+  const response = await fetch(wakeRoute.apiUrl, {
     method: "POST",
     // 批注 2026-08-10：上游只建连不结束时，旧循环永远不会安排下一次检查；
     // 五分钟默认总超时只作兜底，可由 WAKE_UPSTREAM_TIMEOUT_MS 调整。
     signal: AbortSignal.timeout(WAKE_UPSTREAM_TIMEOUT_MS),
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.TARGET_API_KEY}`
+      Authorization: `Bearer ${wakeRoute.apiKey}`
     },
     body: JSON.stringify({
-      model: process.env.MODEL_NAME,
+      model: wakeRoute.model,
       messages: wakeMessages,
       temperature: 0.8,
       top_p: 0.95,
@@ -677,6 +680,8 @@ if (oneShotMode) {
     target_url_configured: Boolean(TARGET_API_URL),
     target_key_configured: Boolean(process.env.TARGET_API_KEY),
     model_configured: Boolean(process.env.MODEL_NAME),
+    model_count: availableModelIds(MODEL_ROUTES).length,
+    wake_model: process.env.WAKE_MODEL_NAME || process.env.MODEL_NAME || "",
     push_provider_configured: Boolean(process.env.BARK_KEY || process.env.NTFY_TOPIC),
     data_dir_ready: fs.existsSync(DATA_DIR)
   }));

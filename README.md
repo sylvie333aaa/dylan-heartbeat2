@@ -567,6 +567,30 @@ GitHub Actions 不适合直接运行 `node wake_up.js`：它是常驻调度器�
 
 `.env` 和 `enhanced_messages.json` 属于私人运行数据，不应提交到公开仓库。若它们曾被提交，请从 Git 跟踪中移除，并更换已经暴露的 Bark Key、API Key 和管理密码。
 
+### 多模型与多 API
+
+所有 OpenAI 兼容 API 都可以挂在同一个 Gateway 下，并共享同一份时间线和 Bark 记录：
+
+```env
+MODEL_NAME=deepseek-chat
+WAKE_MODEL_NAME=deepseek-chat
+MODEL_ROUTES_JSON={"deepseek-chat":{"apiUrl":"https://api.deepseek.com/v1","apiKey":"KEY_A","model":"deepseek-chat"},"gemini-flash":{"apiUrl":"https://relay.example.com/v1","apiKey":"KEY_B","model":"gemini-2.5-flash"}}
+```
+
+- `MODEL_ROUTES_JSON` 的键是 Kelivo 中显示的模型名
+- `apiUrl` 可以填写 `/v1`，程序会自动补成 `/v1/chat/completions`
+- `model` 是发给上游 API 的真实模型名
+- `WAKE_MODEL_NAME` 控制自动主动消息使用哪个模型
+- 所有路由仍共用 Gateway 的时间线、记忆和 Bark 记录
+
+如果一个中转站的模型经常变化，可以不逐个列出，使用通配路由：
+
+```env
+MODEL_ROUTES_JSON={"*":{"apiUrl":"https://relay.example.com/v1","apiKeyEnv":"RELAY_API_KEY"}}
+```
+
+此时 Kelivo 请求的任何模型名都会转发给该中转站，Gateway 的 `/v1/models` 会自动尝试读取中转站模型列表并缓存 5 分钟。
+
 如果已经把 Gateway key 填进 API Key 输入框，聊天请求已能成功进入 `llm_forward_summary`，但日志仍偶尔出现一次 `401 Gateway API Key 无效或缺失`：
 
 1. 先看日志中的 `gateway_auth_rejected`，确认是哪条路径触发（常见是模型列表探测或旧预设请求）。

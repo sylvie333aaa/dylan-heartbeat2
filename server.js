@@ -15,6 +15,7 @@ const {
 const { isSpecialEventContent } = require("./special_events");
 const { decideRequestAccess } = require("./network_access");
 const { injectEventMemory } = require("./event_memory");
+const { availableModelIds, buildModelRoutes, modelsUrlForRoute, resolveModelRoute } = require("./model_routes");
 const {
   formatDateTimeInTimeZone,
   resolveTimeZone,
@@ -38,6 +39,7 @@ app.register(require("@fastify/formbody"));
 
 const PORT = Number(process.env.PORT) || 3000;
 const TARGET_API_URL = normalizeChatCompletionsUrl(process.env.TARGET_API_URL);
+const MODEL_ROUTES = buildModelRoutes(process.env);
 const TIME_ZONE = resolveTimeZone();
 const IS_RAILWAY_RUNTIME = Boolean(
   process.env.RAILWAY_ENVIRONMENT ||
@@ -63,6 +65,38 @@ function configuredModelName() {
   // 批注 2026-07-15：/v1/models 要暴露部署者实际配置的模型名；
   // 不能继续硬编码示例模型，否则 Kelivo 模型选择会和真实上游不一致。
   return String(process.env.MODEL_NAME || "gateway-model").trim() || "gateway-model";
+}
+
+const MODEL_DISCOVERY_CACHE_MS = 5 * 60 * 1000;
+let modelDiscoveryCache = { expiresAt: 0, ids: [] };
+
+async function listAvailableModelIds() {
+  const configured = availableModelIds(MODEL_ROUTES);
+  const wildcardRoute = MODEL_ROUTES["*"];
+  if (!wildcardRoute) return configured;
+  if (Date.now() < modelDiscoveryCache.expiresAt) return modelDiscoveryCache.ids;
+
+  const modelsUrl = modelsUrlForRoute(wildcardRoute);
+  if (!modelsUrl || !wildcardRoute.apiKey) return configured;
+
+  try {
+    const response = await fetch(modelsUrl, {
+      headers: { Authorization: `Bearer ${wildcardRoute.apiKey}` },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const upstreamIds = Array.isArray(data.data)
+      ? data.data.map(model => String(model?.id || "").trim()).filter(Boolean)
+      : [];
+    const ids = [...new Set([...configured, ...upstreamIds])];
+    modelDiscoveryCache = { expiresAt: Date.now() + MODEL_DISCOVERY_CACHE_MS, ids };
+    return ids;
+  } catch (error) {
+    console.warn(`上游模型列表读取失败，使用本地模型列表：${error.message || error}`);
+    modelDiscoveryCache = { expiresAt: Date.now() + 60_000, ids: configured };
+    return configured;
+  }
 }
 
 // ========================
@@ -551,7 +585,7 @@ app.get("/healthz", async () => ({ status: "ok" }));
 app.get("/v1/models", async (req, reply) => {
   reply.send({
     object: "list",
-    data: [{ id: configuredModelName(), object: "model", created: 0, owned_by: "gateway" }]
+    data: (await listAvailableModelIds()).map(id => ({ id, object: "model", created: 0, owned_by: "gateway" }))
   });
 });
 
@@ -561,11 +595,13 @@ app.get("/v1/models", async (req, reply) => {
 app.post("/v1/chat/completions", async (req, reply) => {
   try {
     const body = req.body;
+    const requestedModel = String(body?.model || process.env.MODEL_NAME || configuredModelName()).trim();
+    const selectedRoute = resolveModelRoute(MODEL_ROUTES, requestedModel, process.env.MODEL_NAME);
     // 批注 2026-07-15：公开部署时日志不能默认写入完整上下文；
     // 这里只保留请求摘要，避免 system prompt、记忆和聊天正文进入 pm2 日志。
     console.log(JSON.stringify({
       event: "kelivo_request",
-      model: body?.model || "",
+      model: requestedModel,
       stream: body?.stream === true,
       messages: summarizeMessagesForLog(body?.messages || [])
     }));
@@ -697,20 +733,20 @@ app.post("/v1/chat/completions", async (req, reply) => {
       llmMessages.splice(idx, 1);
     }
 
-    if (!TARGET_API_URL || !process.env.TARGET_API_KEY) {
-      return reply.code(500).send({ error: "TARGET_API_URL / TARGET_API_KEY 未配置" });
+    if (!selectedRoute?.apiUrl || !selectedRoute?.apiKey) {
+      return reply.code(500).send({ error: `模型 ${requestedModel} 的上游 API 未配置` });
     }
 
     const requestedStream = body?.stream === true;
 
     // 请求模型
-    const response = await fetch(TARGET_API_URL, {
+    const response = await fetch(selectedRoute.apiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.TARGET_API_KEY}`
+        Authorization: `Bearer ${selectedRoute.apiKey}`
       },
-      body: JSON.stringify({ ...body, messages: llmMessages })
+      body: JSON.stringify({ ...body, model: selectedRoute.model, messages: llmMessages })
     });
 
     const upstreamContentType = response.headers.get("content-type") || "";
@@ -1849,6 +1885,7 @@ app.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
     target_url_configured: Boolean(TARGET_API_URL),
     target_key_configured: Boolean(process.env.TARGET_API_KEY),
     model_configured: Boolean(process.env.MODEL_NAME),
+    model_count: availableModelIds(MODEL_ROUTES).length,
     gateway_key_configured: Boolean(readEnvValue("GATEWAY_API_KEY")),
     data_dir_ready: fs.existsSync(DATA_DIR)
   }));
