@@ -372,7 +372,7 @@ function stripPosition(messages) {
   return messages.map(({ position, ...rest }) => rest);
 }
 
-function buildWakePrompt(currentTime, diffMinutes, weatherContext = "") {
+function buildWakePrompt(currentTime, diffMinutes, weatherContext = "", lastUserContext = "") {
   // 优先读取独立的提示词文件（推荐方式）
   const promptFile = path.join(__dirname, "wake_prompt.txt");
   if (fs.existsSync(promptFile)) {
@@ -405,6 +405,7 @@ function buildWakePrompt(currentTime, diffMinutes, weatherContext = "") {
 ## 唤醒信息
 - 当前时间：${currentTime}
 - 距离最近一次聊天或主动行为：${diffMinutes} 分钟
+- 最近一条用户消息：${lastUserContext || "无"}
 ${weatherContext ? `\n${weatherContext}\n` : ""}
 
 ## 输出格式
@@ -415,6 +416,8 @@ ${forceSend
 - 像真人发微信一样，一条一条说；系统会把每一行拆成一条独立的 Bark 推送。
 - 禁止输出标题、序号、正文、旁白、动作描写、心理活动、括号解释、Markdown 或代码块。
 - 手机通知标题固定是 🐈‍⬛，正文里不要重复写标题。
+- 必须自然承接最近一条用户消息或最近正在聊的话题，不要突然换话题，也不要编造没有发生过的事情。
+${forceSend ? "- 即使本次必须联系，也只能从最近上下文、当前时段或天气中自然延伸，不能说无关内容。" : ""}
 ${forceSend
     ? `- 如果你想写日记，可以额外输出 [DIARY]...[/DIARY]。`
     : `- 如果没有合适的话题，或不想打扰用户，只输出：[NO_ACTION]，可附带简短原因（10字以内）。
@@ -445,15 +448,22 @@ async function runWakeUp() {
   }
 
   const weatherContext = await fetchWeatherContext();
-  const wakePrompt = buildWakePrompt(getChinaTimeString(), diffMinutes, weatherContext);
+  const lastUserMessage = [...messages].reverse().find(msg => msg.role === "user");
+  const lastUserContext = lastUserMessage
+    ? normalizeContentToText(lastUserMessage.content).slice(0, 500)
+    : "";
+  const wakePrompt = buildWakePrompt(getChinaTimeString(), diffMinutes, weatherContext, lastUserContext);
   const cleanMessages = stripPosition(messages);
 
-  const historyText = cleanMessages
+  const recentMessages = cleanMessages
     .filter(msg => msg.role !== "system")
     .filter(msg => {
       const c = normalizeContentToText(msg.content);
       return !c.includes("<memories>") && !c.includes("记忆库使用策略");
     })
+    .slice(-24);
+
+  const historyText = recentMessages
     .map(msg => {
       const userDisplay = process.env.USER_DISPLAY_NAME || "用户";
       const aiDisplay = process.env.AI_DISPLAY_NAME || "AI";
