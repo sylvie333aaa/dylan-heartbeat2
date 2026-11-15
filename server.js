@@ -16,6 +16,7 @@ const { isSpecialEventContent } = require("./special_events");
 const { decideRequestAccess } = require("./network_access");
 const { injectEventMemory } = require("./event_memory");
 const { availableModelIds, buildModelRoutes, modelsUrlForRoute, resolveModelRoute } = require("./model_routes");
+const { cleanAssistantText, injectChatStyle } = require("./chat_style");
 const {
   formatDateTimeInTimeZone,
   resolveTimeZone,
@@ -642,6 +643,7 @@ app.post("/v1/chat/completions", async (req, reply) => {
     );
 
     llmMessages = injectEventMemory(llmMessages, oldEvents);
+    llmMessages = injectChatStyle(llmMessages);
 
     console.log("本次注入的特殊事件数量:", oldEvents.length);
 
@@ -755,10 +757,22 @@ app.post("/v1/chat/completions", async (req, reply) => {
     // 批注 2026-07-11：Kelivo 关闭 stream 时需要收到普通 JSON；只在请求或上游确认为 SSE 时才按流式直通。
     if (!shouldStreamResponse) {
       const responseText = await response.text();
+      let cleanedResponseText = responseText;
+      if (upstreamContentType.includes("application/json")) {
+        try {
+          const data = JSON.parse(responseText);
+          for (const choice of data.choices || []) {
+            if (choice?.message && typeof choice.message.content === "string") {
+              choice.message.content = cleanAssistantText(choice.message.content);
+            }
+          }
+          cleanedResponseText = JSON.stringify(data);
+        } catch {}
+      }
       return reply
         .code(response.status)
         .header("Content-Type", upstreamContentType || "application/json")
-        .send(responseText);
+        .send(cleanedResponseText);
     }
 
     if (!response.body) {
