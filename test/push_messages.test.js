@@ -21,8 +21,8 @@ test("keeps line-separated chat messages separate", () => {
   assert.deepEqual(bodies, ["到家了吗？", "今天累不累？", "记得早点休息。"]);
 });
 
-test("removes titles, numbering and fenced inner monologue", () => {
-  const bodies = buildPushBodies("标题：晚安\n1. 今天辛苦啦。\n2. 早点睡。\n```心理活动：她应该睡了```", {
+test("removes push-only titles, actions and fenced inner monologue", () => {
+  const bodies = buildPushBodies("标题：晚安\n（看到她回来，我眼睛一亮）\n1. 今天辛苦啦。\n2. 早点睡。\n```心理活动：她应该睡了```", {
     maxMessages: 4,
     maxChars: 48
   });
