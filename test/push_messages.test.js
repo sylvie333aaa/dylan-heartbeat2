@@ -34,3 +34,8 @@ test("limits the number of generated notifications", () => {
   const bodies = buildPushBodies("一\n二\n三\n四\n五\n六", { maxMessages: 3, maxChars: 48 });
   assert.equal(bodies.length, 3);
 });
+
+test("removes duplicate messages within one push round", () => {
+  const bodies = buildPushBodies("在吗？\n在吗？\n今天累不累？", { maxMessages: 4, maxChars: 48 });
+  assert.deepEqual(bodies, ["在吗？", "今天累不累？"]);
+});

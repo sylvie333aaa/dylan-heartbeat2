@@ -374,7 +374,7 @@ function stripPosition(messages) {
   return messages.map(({ position, ...rest }) => rest);
 }
 
-function buildWakePrompt(currentTime, diffMinutes, weatherContext = "", lastUserContext = "") {
+function buildWakePrompt(currentTime, diffMinutes, weatherContext = "", lastUserContext = "", lastProactiveContext = "") {
   // 优先读取独立的提示词文件（推荐方式）
   const promptFile = path.join(__dirname, "wake_prompt.txt");
   if (fs.existsSync(promptFile)) {
@@ -408,6 +408,7 @@ function buildWakePrompt(currentTime, diffMinutes, weatherContext = "", lastUser
 - 当前时间：${currentTime}
 - 距离最近一次聊天或主动行为：${diffMinutes} 分钟
 - 最近一条用户消息：${lastUserContext || "无"}
+- 最近一次主动消息：${lastProactiveContext || "无"}
 ${weatherContext ? `\n${weatherContext}\n` : ""}
 
 ## 输出格式
@@ -419,6 +420,7 @@ ${forceSend
 - 禁止输出标题、序号、正文、旁白、动作描写、心理活动、括号解释、Markdown 或代码块。
 - 手机通知标题固定是 🐈‍⬛，正文里不要重复写标题。
 - 必须自然承接最近一条用户消息或最近正在聊的话题，不要突然换话题，也不要编造没有发生过的事情。
+- 不要重复最近一次主动消息的内容、句式和开场白。如果只能重复上一轮，就换一个自然话题或输出 [NO_ACTION]。
 ${forceSend ? "- 即使本次必须联系，也只能从最近上下文、当前时段或天气中自然延伸，不能说无关内容。" : ""}
 ${forceSend
     ? `- 如果你想写日记，可以额外输出 [DIARY]...[/DIARY]。`
@@ -454,7 +456,19 @@ async function runWakeUp() {
   const lastUserContext = lastUserMessage
     ? normalizeContentToText(lastUserMessage.content).slice(0, 500)
     : "";
-  const wakePrompt = buildWakePrompt(getChinaTimeString(), diffMinutes, weatherContext, lastUserContext);
+  const lastProactiveEvent = [...messages].reverse().find(msg =>
+    msg.role === "assistant" && /刚刚(?:给.*?发了.*?推送|发送了推送)/.test(normalizeContentToText(msg.content))
+  );
+  const lastProactiveContext = lastProactiveEvent
+    ? normalizeContentToText(lastProactiveEvent.content).slice(0, 700)
+    : "";
+  const wakePrompt = buildWakePrompt(
+    getChinaTimeString(),
+    diffMinutes,
+    weatherContext,
+    lastUserContext,
+    lastProactiveContext
+  );
   const cleanMessages = stripPosition(messages);
 
   const recentMessages = cleanMessages
@@ -590,9 +604,20 @@ ${historyText}`
       maxChars: PUSH_MAX_MESSAGE_CHARS
     });
 
+    const normalizeForRepeatCheck = value => String(value || "")
+      .toLowerCase()
+      .replace(/[\s\p{P}\p{S}]/gu, "");
+    const normalizedLastPush = normalizeForRepeatCheck(lastProactiveContext);
+    const repeatedRound = pushBodies.length > 0 && pushBodies.every(body =>
+      normalizedLastPush.includes(normalizeForRepeatCheck(body))
+    );
+
     if (pushBodies.length === 0) {
       console.log("\n推送内容清洗后为空，本次不发送推送\n");
       eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送推送｜原因：推送内容为空）`;
+    } else if (repeatedRound) {
+      console.log("\n本次内容与上一条主动消息完全重复，已跳过发送\n");
+      eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送推送｜原因：避免重复上一条）`;
     } else {
       const safeTitle = getDefaultPushTitle();
       const sentBodies = [];

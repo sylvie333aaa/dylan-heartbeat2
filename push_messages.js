@@ -68,7 +68,15 @@ function buildPushBodies(text, options = {}) {
     if (bodies.length >= maxMessages) break;
   }
 
-  return bodies.slice(0, maxMessages);
+  const seen = new Set();
+  return bodies
+    .filter(body => {
+      const key = body.replace(/\s+/g, "").trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxMessages);
 }
 
 module.exports = { buildPushBodies };
