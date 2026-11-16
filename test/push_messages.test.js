@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildPushBodies } = require("../push_messages");
+const { buildPushBodies, hasVisiblePushContent } = require("../push_messages");
 
 test("splits a long paragraph into several short messages", () => {
   const bodies = buildPushBodies("今天外面下雨了，记得带伞。路上慢一点，不要着急。到地方了跟我说一声，我会等你。", {
@@ -38,4 +38,12 @@ test("limits the number of generated notifications", () => {
 test("removes duplicate messages within one push round", () => {
   const bodies = buildPushBodies("在吗？\n在吗？\n今天累不累？", { maxMessages: 4, maxChars: 48 });
   assert.deepEqual(bodies, ["在吗？", "今天累不累？"]);
+});
+
+test("rejects empty and placeholder-only push bodies", () => {
+  assert.equal(hasVisiblePushContent(""), false);
+  assert.equal(hasVisiblePushContent(" \u200b\u200c\u200d\ufeff "), false);
+  assert.equal(hasVisiblePushContent("emptymessage"), false);
+  assert.equal(hasVisiblePushContent("empty message"), false);
+  assert.equal(hasVisiblePushContent("晚安。"), true);
 });

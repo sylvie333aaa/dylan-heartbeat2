@@ -6,7 +6,7 @@ const { ensureDataDir, runtimeDirectory, runtimeFile } = require("./runtime_path
 const { parseChatCompletionResponse } = require("./upstream_response");
 const { normalizeChatCompletionsUrl } = require("./api_url");
 const { isSpecialEventContent } = require("./special_events");
-const { buildPushBodies } = require("./push_messages");
+const { buildPushBodies, hasVisiblePushContent } = require("./push_messages");
 const { availableModelIds, buildModelRoutes, resolveModelRoute } = require("./model_routes");
 const {
   formatDateTimeInTimeZone,
@@ -97,6 +97,10 @@ function appendDiaryEntry(content) {
 // 批注 2026-07-11：推送层扩展为 Bark/ntfy；默认仍走 Bark，保护旧部署不改 .env 也能继续运行。
 async function sendPushNotification({ title, body }) {
   const provider = (process.env.PUSH_PROVIDER || "bark").trim().toLowerCase();
+  const cleanBody = String(body || "").trim();
+  if (!hasVisiblePushContent(cleanBody)) {
+    return { ok: false, providerLabel: provider || "推送", reason: "推送正文为空" };
+  }
 
   if (provider === "ntfy") {
     const topic = String(process.env.NTFY_TOPIC || "").trim();
@@ -110,7 +114,7 @@ async function sendPushNotification({ title, body }) {
     const payload = buildNtfyPayload({
       topic,
       title,
-      message: body,
+      message: cleanBody,
       priority: process.env.NTFY_PRIORITY,
       tags: process.env.NTFY_TAGS
     });
@@ -138,7 +142,7 @@ async function sendPushNotification({ title, body }) {
 
   const barkPayload = {
     title,
-    body,
+    body: cleanBody,
     device_key: process.env.BARK_KEY,
     icon: process.env.CUSTOM_ICON_URL
   };

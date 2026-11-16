@@ -1,6 +1,13 @@
 const DEFAULT_MAX_MESSAGES = 4;
 const DEFAULT_MAX_CHARS = 48;
 
+function hasVisiblePushContent(text) {
+  const visible = String(text || "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim();
+  return visible.length > 0 && !/^(?:empty\s*message|emptymessage)$/i.test(visible);
+}
+
 function cleanLine(line) {
   return String(line || "")
     .replace(/^[-*•]\s*/, "")
@@ -74,11 +81,11 @@ function buildPushBodies(text, options = {}) {
   return bodies
     .filter(body => {
       const key = body.replace(/\s+/g, "").trim();
-      if (!key || seen.has(key)) return false;
+      if (!key || !hasVisiblePushContent(body) || seen.has(key)) return false;
       seen.add(key);
       return true;
     })
     .slice(0, maxMessages);
 }
 
-module.exports = { buildPushBodies };
+module.exports = { buildPushBodies, hasVisiblePushContent };
