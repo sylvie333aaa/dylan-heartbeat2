@@ -33,6 +33,7 @@ const PUSH_TIMEOUT_MS = readPositiveTimeout("PUSH_TIMEOUT_MS", 15_000);
 const WAKE_UPSTREAM_TIMEOUT_MS = readPositiveTimeout("WAKE_UPSTREAM_TIMEOUT_MS", 300_000);
 const PUSH_MAX_MESSAGES = readNumberEnv("PUSH_MAX_MESSAGES", 4, { min: 1, max: 8 });
 const PUSH_MAX_MESSAGE_CHARS = readNumberEnv("PUSH_MAX_MESSAGE_CHARS", 48, { min: 12, max: 200 });
+const BARK_GROUP = String(process.env.BARK_GROUP || "dylan-heartbeat").trim() || "dylan-heartbeat";
 
 function readPositiveTimeout(key, fallback) {
   const value = Number(process.env[key]);
@@ -144,7 +145,8 @@ async function sendPushNotification({ title, body }) {
     title,
     body: cleanBody,
     device_key: process.env.BARK_KEY,
-    icon: process.env.CUSTOM_ICON_URL
+    icon: process.env.CUSTOM_ICON_URL,
+    group: BARK_GROUP
   };
 
   const response = await fetch("https://api.day.app/push", {

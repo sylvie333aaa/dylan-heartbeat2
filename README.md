@@ -236,6 +236,7 @@ TARGET_API_KEY=sk-你的APIKey
 GATEWAY_API_KEY=请改成随机长密码
 MODEL_NAME=你的模型
 BARK_KEY=你的Bark设备Key
+BARK_GROUP=dylan-heartbeat
 CUSTOM_ICON_URL=https://你的图标URL（可选）
 ALLOW_PUBLIC_API=false
 PUSH_PROVIDER=bark
@@ -420,6 +421,7 @@ WEATHER_UNITS=metric
 ```env
 PUSH_PROVIDER=bark
 BARK_KEY=你的Bark设备Key
+BARK_GROUP=dylan-heartbeat
 ```
 
 如果你使用 Android，或想使用桌面/自建推送服务，可以切换到 [ntfy](https://ntfy.sh/)：
